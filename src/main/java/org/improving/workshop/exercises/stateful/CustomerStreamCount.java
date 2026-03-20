@@ -32,7 +32,7 @@ public class CustomerStreamCount {
         startStreams(builder);
     }
 
-    static void configureTopology(final StreamsBuilder builder) {
+    public static void configureTopology(final StreamsBuilder builder) {
 //        builder
 //            // consume events from INPUT_TOPIC
 //            .stream(TOPIC_DATA_DEMO_STREAMS, Consumed.with(Serdes.String(), Streams.SERDE_STREAM_JSON))
