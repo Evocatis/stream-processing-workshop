@@ -131,7 +131,7 @@ public class ThankYouEmail {
                 .groupByKey(Grouped.with(Serdes.String(), SERDE_STREAM_JSON))
 
                 // Step 3: Window by 5 seconds for manual testing
-                .windowedBy(TimeWindows.ofSizeAndGrace(Duration.ofSeconds(5), Duration.ofSeconds(1)))
+                .windowedBy(TimeWindows.ofSizeAndGrace(Duration.ofSeconds(10), Duration.ofSeconds(1)))
 
                 // Step 4: Count streams (STATE STORE #1)
                 .count(
