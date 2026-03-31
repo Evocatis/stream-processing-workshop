@@ -112,6 +112,7 @@ public class CustomerConversion {
             .groupBy((customer, match) -> "TALLY", Grouped.with(Serdes.String(), Serdes.Boolean()))
             .count(Materialized.as("listened-ticket-tally-store"))
             .toStream()
+            .peek((key, value) -> log.info("Tally updated: " + key + " -> " + value))
             .to(OUTPUT_TOPIC, Produced.with(Serdes.String(), Serdes.Long()));
     }
 
