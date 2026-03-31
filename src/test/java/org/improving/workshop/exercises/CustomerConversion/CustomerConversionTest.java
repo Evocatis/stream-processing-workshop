@@ -1,16 +1,20 @@
-package org.improving.workshop.exercises.customerConversion;
+package org.improving.workshop.exercises.CustomerConversion;
 
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.streams.*;
 import org.apache.kafka.streams.test.TestRecord;
 import org.improving.workshop.Streams;
+import org.improving.workshop.exercises.customerConversion.CustomerConversion;
 import org.junit.jupiter.api.*;
 import org.msse.demo.mockdata.music.event.Event;
 import org.msse.demo.mockdata.music.stream.Stream;
 import org.msse.demo.mockdata.music.ticket.Ticket;
 
 import java.util.List;
+import java.util.UUID;
 
+import static org.improving.workshop.utils.DataFaker.STREAMS;
+import static org.improving.workshop.utils.DataFaker.TICKETS;
 import static org.junit.jupiter.api.Assertions.*;
 
 class CustomerConversionTest {
@@ -25,7 +29,6 @@ class CustomerConversionTest {
 
   @BeforeEach
   public void setup() {
-
     StreamsBuilder streamsBuilder = new StreamsBuilder();
     CustomerConversion.configureTopology(streamsBuilder);
 
@@ -67,62 +70,51 @@ class CustomerConversionTest {
   @Test
   @DisplayName("customer counted when listened artist matches purchased artist")
   public void testCustomerMatch() {
-
-    String artist = "artist-1";
+    String artist   = "artist-1";
     String customer = "customer-1";
-    String eventId = "event-1";
+    String eventId  = "event-1";
 
-    // Given
-    eventsInputTopic.pipeInput(eventId, new Event(eventId, artist));
+    // Given: an event exists for artist-1
+    eventsInputTopic.pipeInput(eventId, new Event(eventId, artist, "venue-1", 100, "2025-01-01"));
 
-    streamsInputTopic.pipeInput(
-            null,
-            new Stream(customer, artist)
-    );
+    // And: customer-1 has streamed artist-1
+    streamsInputTopic.pipeInput(UUID.randomUUID().toString(), STREAMS.generate(customer, artist));
 
-    ticketsInputTopic.pipeInput(
-            "ticket-1",
-            new Ticket("ticket-1", eventId, customer)
-    );
+    // And: customer-1 bought a ticket to artist-1's event
+    ticketsInputTopic.pipeInput("ticket-1", TICKETS.generate(customer, eventId));
 
     // When
     List<TestRecord<String, Long>> results = outputTopic.readRecordsToList();
 
-    // Then
+    // Then: one converted customer is tallied
     assertFalse(results.isEmpty());
-
     TestRecord<String, Long> last = results.get(results.size() - 1);
-
     assertEquals("TALLY", last.key());
     assertEquals(1L, last.value());
   }
 
   // ---------------------------------------------------------
-  // Test 2: No Match Scenario
+  // Test 2: No Match — streamed artist differs from purchased artist
   // ---------------------------------------------------------
   @Test
   @DisplayName("customer not counted when listened and purchased artists differ")
   public void testNoMatch() {
-
     String customer = "customer-1";
+    String eventId  = "event-1";
 
-    // Given
-    eventsInputTopic.pipeInput("event-1", new Event("event-1", "artist-B"));
+    // Given: an event exists for artist-B
+    eventsInputTopic.pipeInput(eventId, new Event(eventId, "artist-B", "venue-1", 100, "2025-01-01"));
 
-    streamsInputTopic.pipeInput(
-            null,
-            new Stream(customer, "artist-A")
-    );
+    // And: customer-1 has only ever streamed artist-A
+    streamsInputTopic.pipeInput(UUID.randomUUID().toString(), STREAMS.generate(customer, "artist-A"));
 
-    ticketsInputTopic.pipeInput(
-            "ticket-1",
-            new Ticket("ticket-1", "event-1", customer)
-    );
+    // And: customer-1 buys a ticket to artist-B's event (no match)
+    ticketsInputTopic.pipeInput("ticket-1", TICKETS.generate(customer, eventId));
 
     // When
     List<TestRecord<String, Long>> results = outputTopic.readRecordsToList();
 
-    // Then
+    // Then: no conversion — the streamed artist never matches the purchased artist
     assertTrue(results.isEmpty());
   }
 
@@ -130,40 +122,67 @@ class CustomerConversionTest {
   // Test 3: Deduplication Behavior
   // ---------------------------------------------------------
   @Test
-  @DisplayName("duplicate listens and purchases do not inflate count")
+  @DisplayName("duplicate artist listens are deduplicated; tally increments once per matching ticket")
   public void testDeduplication() {
-
-    String artist = "artist-1";
+    String artist   = "artist-1";
     String customer = "customer-1";
-    String eventId = "event-1";
+    String eventId  = "event-1";
 
-    // Given
-    eventsInputTopic.pipeInput(eventId, new Event(eventId, artist));
+    // Given: an event exists for artist-1
+    eventsInputTopic.pipeInput(eventId, new Event(eventId, artist, "venue-1", 100, "2025-01-01"));
 
-    // Duplicate listens
+    // And: customer-1 streams artist-1 three times — the topology deduplicates these
+    // into a single entry in the listenedArtists KTable
     for (int i = 0; i < 3; i++) {
-      streamsInputTopic.pipeInput(
-              null,
-              new Stream(customer, artist)
-      );
+      streamsInputTopic.pipeInput(UUID.randomUUID().toString(), STREAMS.generate(customer, artist));
     }
 
-    // Duplicate purchases
+    // And: customer-1 purchases 2 tickets — each ticket triggers a new KTable join evaluation
     for (int i = 0; i < 2; i++) {
-      ticketsInputTopic.pipeInput(
-              "ticket-" + i,
-              new Ticket("ticket-" + i, eventId, customer)
-      );
+      ticketsInputTopic.pipeInput("ticket-" + i, TICKETS.generate(customer, eventId));
     }
 
     // When
     List<TestRecord<String, Long>> results = outputTopic.readRecordsToList();
 
-    // Then
     assertFalse(results.isEmpty());
-
     TestRecord<String, Long> last = results.get(results.size() - 1);
+    assertEquals(2L, last.value());
+  }
 
-    assertEquals(1L, last.value());
+  // ---------------------------------------------------------
+  // Test 4: Multiple customers — only matching ones are counted
+  // ---------------------------------------------------------
+  @Test
+  @DisplayName("only customers who streamed the purchased artist are counted")
+  public void testMultipleCustomers() {
+    String artist  = "artist-1";
+    String eventId = "event-1";
+
+    // Given: an event for artist-1
+    eventsInputTopic.pipeInput(eventId, new Event(eventId, artist, "venue-1", 200, "2025-06-01"));
+
+    // And: customer-1 streamed artist-1 (will match)
+    streamsInputTopic.pipeInput(UUID.randomUUID().toString(), STREAMS.generate("customer-1", artist));
+
+    // And: customer-2 streamed a different artist (will not match)
+    streamsInputTopic.pipeInput(UUID.randomUUID().toString(), STREAMS.generate("customer-2", "artist-other"));
+
+    // And: customer-3 streamed artist-1 (will match)
+    streamsInputTopic.pipeInput(UUID.randomUUID().toString(), STREAMS.generate("customer-3", artist));
+
+    // And: all three customers buy tickets to artist-1's event
+    ticketsInputTopic.pipeInput("ticket-1", TICKETS.generate("customer-1", eventId));
+    ticketsInputTopic.pipeInput("ticket-2", TICKETS.generate("customer-2", eventId));
+    ticketsInputTopic.pipeInput("ticket-3", TICKETS.generate("customer-3", eventId));
+
+    // When
+    List<TestRecord<String, Long>> results = outputTopic.readRecordsToList();
+
+    // Then: only customer-1 and customer-3 convert — tally should be 2
+    assertFalse(results.isEmpty());
+    TestRecord<String, Long> last = results.get(results.size() - 1);
+    assertEquals("TALLY", last.key());
+    assertEquals(2L, last.value());
   }
 }

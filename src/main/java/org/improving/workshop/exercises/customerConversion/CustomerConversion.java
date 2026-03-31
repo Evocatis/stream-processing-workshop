@@ -32,7 +32,7 @@ public class CustomerConversion {
         startStreams(builder);
     }
 
-    static void configureTopology(final StreamsBuilder builder) {
+    public static void configureTopology(final StreamsBuilder builder) {
 
         KTable<String, Event> eventsTable = builder
             .table(
