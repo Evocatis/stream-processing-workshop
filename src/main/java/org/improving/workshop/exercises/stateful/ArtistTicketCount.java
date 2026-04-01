@@ -32,7 +32,7 @@ public class ArtistTicketCount {
         startStreams(builder);
     }
 
-    static void configureTopology(final StreamsBuilder builder) {
+    public static void configureTopology(final StreamsBuilder builder) {
         // hint: store Events in a table so that the ticket can reference them to find the Artist
         // see samples/PurchaseEventTicket for an example of creating a KTable
 
