@@ -130,8 +130,8 @@ public class ThankYouEmail {
                 // Step 2: Group by key
                 .groupByKey(Grouped.with(Serdes.String(), SERDE_STREAM_JSON))
 
-                // Step 3: Window by 1 month (approximately 30 days)
-                .windowedBy(TimeWindows.ofSizeAndGrace(Duration.ofDays(30), Duration.ofDays(5)))
+                // Step 3: Window by 5 seconds for manual testing
+                .windowedBy(TimeWindows.ofSizeAndGrace(Duration.ofSeconds(10), Duration.ofSeconds(1)))
 
                 // Step 4: Count streams (STATE STORE #1)
                 .count(
