@@ -133,6 +133,7 @@ public class ThankYouEmail {
                 // Step 3: Window by 5 seconds for manual testing
                 .windowedBy(TimeWindows.ofSizeAndGrace(Duration.ofSeconds(10), Duration.ofSeconds(1)))
 
+                .emitStrategy(EmitStrategy.onWindowClose())
                 // Step 4: Count streams (STATE STORE #1)
                 .count(
                         Materialized
